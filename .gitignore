@@ -9,10 +9,10 @@ __pycache__/
 *.sqlite3
 *.db
 instance/
-uploads/
-vault/
+/uploads/
+/vault_data/
 
-# Benchmark output (regenerate with `python bench.py`)
+# Benchmark output (regenerate with `python -m vault.bench`)
 bench_results.csv
 
 # Editor / OS
