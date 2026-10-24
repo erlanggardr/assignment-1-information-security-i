@@ -1,0 +1,21 @@
+# Python
+.venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+
+# Local data and secrets
+.env
+*.sqlite3
+*.db
+instance/
+uploads/
+vault/
+
+# Benchmark output (regenerate with `python bench.py`)
+bench_results.csv
+
+# Editor / OS
+.vscode/
+.idea/
+.DS_Store
