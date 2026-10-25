@@ -41,6 +41,7 @@ INSTALLED_APPS = [
     # Third-party
     "allauth",
     "allauth.account",
+    "vault",
     "crispy_forms",
     "crispy_bootstrap5",
     "debug_toolbar",
