@@ -1,0 +1,34 @@
+{% extends "_base.html" %}
+{% block title %}Encrypt demo{% endblock title %}
+{% block content %}
+<h2 class="mt-4">Encrypt with AES, DES and RC4</h2>
+{% if error %}<div class="alert alert-danger">{{ error }}</div>{% endif %}
+<form method="post" enctype="multipart/form-data" class="card card-body mb-4">
+  {% csrf_token %}
+  <label class="form-label">Password (derives the keys)</label>
+  <input type="password" name="password" class="form-control mb-3" required>
+  <label class="form-label">File (ID image, PDF/DOC/XLS, video)</label>
+  <input type="file" name="file" class="form-control mb-3">
+  <label class="form-label">...or text</label>
+  <textarea name="text" rows="3" class="form-control mb-3" placeholder="NIK, name, ..."></textarea>
+  <button class="btn btn-primary align-self-start">Encrypt, decrypt and verify</button>
+</form>
+{% if rows %}
+<div class="card card-body mb-4">
+  <h4>Result</h4>
+  <p class="text-muted small">Plaintext {{ plain_size }} bytes &middot; SHA-256 <code>{{ digest }}</code></p>
+  <table class="table table-sm">
+    <thead><tr><th>Cipher</th><th>Encrypt ms</th><th>Decrypt ms</th><th>Ciphertext bytes</th><th>Overhead</th><th>Verified</th></tr></thead>
+    <tbody>
+    {% for r in rows %}
+      <tr><td>{{ r.cipher }}</td><td>{{ r.enc_ms|floatformat:3 }}</td><td>{{ r.dec_ms|floatformat:3 }}</td>
+        <td>{{ r.size }}</td><td>+{{ r.overhead }}</td>
+        <td class="{% if r.intact %}text-success{% else %}text-danger{% endif %} fw-bold">{% if r.intact %}intact{% else %}FAILED{% endif %}</td></tr>
+      <tr><td colspan="6" class="text-muted small">first bytes: <code>{{ r.preview }}</code></td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  <p class="text-muted small mb-0">One run on one payload, so these timings are indicative only; use the Benchmark page for a reliable comparison.</p>
+</div>
+{% endif %}
+{% endblock content %}
