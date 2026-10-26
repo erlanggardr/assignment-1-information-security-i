@@ -6,15 +6,17 @@ import time
 from dataclasses import dataclass
 
 from Crypto.Cipher import AES, ARC4, DES
+from Crypto.Hash import SHA256
+from Crypto.Protocol.KDF import HKDF
 from Crypto.Util.Padding import pad, unpad
 
 CIPHERS = ("aes", "des", "rc4")
 
-PBKDF2_ITERATIONS = 200_000
-SALT_SIZE = 16
 TAG_SIZE = 32
+DEK_SIZE = 32
 RC4_DROP = 3072
 _IV_SIZE = {"aes": 16, "des": 8, "rc4": 16}
+_HKDF_CONTEXT = b"vault-cipher-keys-v1"
 
 
 class IntegrityError(Exception):
@@ -22,24 +24,24 @@ class IntegrityError(Exception):
 
 
 @dataclass(frozen=True)
-class UserKeys:
+class CipherKeys:
     aes: bytes
     des: bytes
     rc4: bytes
     mac: bytes
 
 
-def new_salt() -> bytes:
-    return os.urandom(SALT_SIZE)
+def cipher_keys_from_dek(dek: bytes) -> CipherKeys:
+    if len(dek) != DEK_SIZE:
+        raise ValueError(f"data key must be {DEK_SIZE} bytes, got {len(dek)}")
+    m = HKDF(dek, 88, b"", SHA256, context=_HKDF_CONTEXT)
+    return CipherKeys(aes=m[0:32], des=m[32:40], rc4=m[40:56], mac=m[56:88])
 
 
-def derive_user_keys(password: str, salt: bytes) -> UserKeys:
-    m = hashlib.pbkdf2_hmac("sha256", password.encode("utf-8"), salt, PBKDF2_ITERATIONS, dklen=88)
-    return UserKeys(aes=m[0:32], des=m[32:40], rc4=m[40:56], mac=m[56:88])
-
-
-def sha256_hex(data: bytes) -> str:
-    return hashlib.sha256(data).hexdigest()
+def keyed_digest(keys: CipherKeys, plaintext: bytes, aad: bytes = b"") -> bytes:
+    mac = hmac.new(keys.mac, digestmod=hashlib.sha256)
+    mac.update(b"plaintext-digest|" + struct.pack(">Q", len(aad)) + aad + plaintext)
+    return mac.digest()
 
 
 def _tag(keys, name, aad, iv, ct):
@@ -73,14 +75,14 @@ def _check_name(name):
         raise ValueError(f"unknown cipher {name!r}, expected one of {CIPHERS}")
 
 
-def encrypt(name: str, plaintext: bytes, keys: UserKeys, aad: bytes = b"") -> bytes:
+def encrypt(name: str, plaintext: bytes, keys: CipherKeys, aad: bytes = b"") -> bytes:
     _check_name(name)
     iv = os.urandom(_IV_SIZE[name])
     ct = _encrypt_core(name, keys, iv, plaintext)
     return iv + _tag(keys, name, aad, iv, ct) + ct
 
 
-def decrypt(name: str, blob: bytes, keys: UserKeys, aad: bytes = b"") -> bytes:
+def decrypt(name: str, blob: bytes, keys: CipherKeys, aad: bytes = b"") -> bytes:
     _check_name(name)
     n = _IV_SIZE[name]
     if len(blob) < n + TAG_SIZE:
@@ -102,17 +104,17 @@ class EncryptResult:
     size: int
 
 
-def encrypt_all(plaintext: bytes, keys: UserKeys, aad: bytes = b""):
+def encrypt_all(plaintext: bytes, keys: CipherKeys, aad: bytes = b""):
     out = {}
     for name in CIPHERS:
         t0 = time.perf_counter_ns()
         blob = encrypt(name, plaintext, keys, aad)
         out[name] = EncryptResult(name, blob, time.perf_counter_ns() - t0, len(blob))
-    return sha256_hex(plaintext), out
+    return keyed_digest(keys, plaintext, aad), out
 
 
-def decrypt_and_verify(name, blob, keys, expected_sha256, aad=b""):
+def decrypt_and_verify(name, blob, keys, expected_digest: bytes, aad: bytes = b"") -> bytes:
     plain = decrypt(name, blob, keys, aad)
-    if not hmac.compare_digest(sha256_hex(plain), expected_sha256):
-        raise IntegrityError("plaintext SHA-256 mismatch")
+    if not hmac.compare_digest(keyed_digest(keys, plain, aad), expected_digest):
+        raise IntegrityError("plaintext digest mismatch")
     return plain

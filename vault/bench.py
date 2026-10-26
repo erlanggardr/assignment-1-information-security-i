@@ -22,7 +22,7 @@ def _median_ns(fn, runs):
 
 def run_benchmark(sizes=None, runs=10):
     sizes = sizes or DEFAULT_SIZES
-    keys = ce.derive_user_keys("benchmark-password", os.urandom(ce.SALT_SIZE))
+    keys = ce.cipher_keys_from_dek(os.urandom(ce.DEK_SIZE))
     rows = []
     for label, n in sizes.items():
         data = os.urandom(n)
