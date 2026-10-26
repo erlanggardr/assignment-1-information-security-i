@@ -5,8 +5,7 @@
 {% if error %}<div class="alert alert-danger">{{ error }}</div>{% endif %}
 <form method="post" enctype="multipart/form-data" class="card card-body mb-4">
   {% csrf_token %}
-  <label class="form-label">Password (derives the keys)</label>
-  <input type="password" name="password" class="form-control mb-3" required>
+  
   <label class="form-label">File (ID image, PDF/DOC/XLS, video)</label>
   <input type="file" name="file" class="form-control mb-3">
   <label class="form-label">...or text</label>
@@ -16,7 +15,7 @@
 {% if rows %}
 <div class="card card-body mb-4">
   <h4>Result</h4>
-  <p class="text-muted small">Plaintext {{ plain_size }} bytes &middot; SHA-256 <code>{{ digest }}</code></p>
+  <p class="text-muted small">Plaintext {{ plain_size }} bytes &middot; keyed digest <code>{{ digest }}</code></p>
   <table class="table table-sm">
     <thead><tr><th>Cipher</th><th>Encrypt ms</th><th>Decrypt ms</th><th>Ciphertext bytes</th><th>Overhead</th><th>Verified</th></tr></thead>
     <tbody>

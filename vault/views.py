@@ -1,9 +1,11 @@
+import os
 import time
+import uuid
 
 from django.contrib.auth.decorators import login_required
 from django.shortcuts import render
 
-from . import bench
+from . import bench, keys, sealing
 from . import crypto_engine as ce
 
 MAX_UPLOAD_BYTES = 64 * 1024 * 1024
@@ -14,41 +16,39 @@ def encrypt_demo(request):
     if request.method != "POST":
         return render(request, "vault/demo.html")
 
-    password = request.POST.get("password", "")
     upload = request.FILES.get("file")
     data = upload.read() if upload else request.POST.get("text", "").encode("utf-8")
     error = None
-    if not password:
-        error = "Password is required."
-    elif not data:
+    if not data:
         error = "Provide a file or some text."
     elif len(data) > MAX_UPLOAD_BYTES:
         error = "File is larger than 64 MB."
     if error:
         return render(request, "vault/demo.html", {"error": error}, status=400)
 
-    keys = ce.derive_user_keys(password, ce.new_salt())
-    digest, results = ce.encrypt_all(data, keys)
+    muk = os.urandom(keys.MUK_SIZE)  # replaced by the logged-in user's key in the next commit
+    aad = keys.record_aad(request.user.pk, uuid.uuid4())
+    sealed = sealing.seal(data, muk, aad)
     rows = []
     for name in ce.CIPHERS:
-        res = results[name]
         t0 = time.perf_counter_ns()
         try:
-            ce.decrypt_and_verify(name, res.blob, keys, digest)
+            sealing.open_sealed(sealed, name, muk, aad)
             intact = True
         except ce.IntegrityError:
             intact = False
-        dec_ns = time.perf_counter_ns() - t0
+        total_ns = time.perf_counter_ns() - t0
+        blob = sealed.blobs[name]
         rows.append({
             "cipher": name.upper(),
-            "enc_ms": res.encrypt_ns / 1e6,
-            "dec_ms": dec_ns / 1e6,
-            "size": res.size,
-            "overhead": res.size - len(data),
+            "enc_ms": sealed.encrypt_ns[name] / 1e6,
+            "dec_ms": total_ns / 1e6,
+            "size": len(blob),
+            "overhead": len(blob) - len(data),
             "intact": intact,
-            "preview": res.blob[:24].hex() + "...",
+            "preview": blob[:24].hex() + "...",
         })
-    return render(request, "vault/demo.html", {"rows": rows, "plain_size": len(data), "digest": digest})
+    return render(request, "vault/demo.html", {"rows": rows, "plain_size": len(data), "digest": sealed.digest.hex()})
 
 
 @login_required
