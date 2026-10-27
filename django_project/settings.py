@@ -154,6 +154,9 @@ STATIC_URL = "/static/"
 # https://docs.djangoproject.com/en/dev/ref/contrib/staticfiles/#std:setting-STATICFILES_DIRS
 STATICFILES_DIRS = [BASE_DIR / "static"]
 
+# Encrypted vault blobs (never served directly; downloads go through an authenticated view).
+MEDIA_ROOT = BASE_DIR / "vault_data"
+
 # https://whitenoise.readthedocs.io/en/latest/django.html
 STORAGES = {
     "default": {
@@ -192,7 +195,7 @@ AUTH_USER_MODEL = "accounts.CustomUser"
 SITE_ID = 1
 
 # https://docs.djangoproject.com/en/dev/ref/settings/#login-redirect-url
-LOGIN_REDIRECT_URL = "home"
+LOGIN_REDIRECT_URL = "vault_dashboard"
 
 # https://django-allauth.readthedocs.io/en/latest/views.html#logout-account-logout
 ACCOUNT_LOGOUT_REDIRECT_URL = "home"

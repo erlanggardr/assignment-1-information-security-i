@@ -1,0 +1,10 @@
+{% extends "_base.html" %}
+{% block title %}Integrity check failed{% endblock title %}
+{% block content %}
+<div class="alert alert-danger mt-4">
+  <h4>Integrity check failed</h4>
+  <p class="mb-0">The {{ cipher }} copy of this item did not pass verification, so nothing was returned.
+    Try another cipher; the copies are independent.</p>
+</div>
+<a href="{% url 'vault_dashboard' %}">Back to my vault</a>
+{% endblock content %}

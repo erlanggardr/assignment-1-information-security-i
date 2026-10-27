@@ -1,0 +1,44 @@
+{% extends "_base.html" %}
+{% block title %}My vault{% endblock title %}
+{% block content %}
+<h2 class="mt-4">My vault</h2>
+<p class="text-muted">Each item is stored three times, once per cipher. Pick a cipher when you download to compare them;
+  the file you get back is checked against the digest taken when you uploaded it.</p>
+<div class="mb-3 d-flex flex-wrap gap-2">
+  <a class="btn btn-primary" href="{% url 'vault_profile' %}">Personal data</a>
+  <a class="btn btn-outline-primary" href="{% url 'vault_upload' 'id-card' %}">Upload ID card</a>
+  <a class="btn btn-outline-primary" href="{% url 'vault_upload' 'office' %}">Upload document</a>
+  <a class="btn btn-outline-primary" href="{% url 'vault_upload' 'video' %}">Upload video</a>
+</div>
+{% if entries %}
+<table class="table align-middle">
+  <thead><tr><th>Type</th><th>Name</th><th>Size</th><th>Stored</th><th>Download</th><th></th></tr></thead>
+  <tbody>
+  {% for e in entries %}
+    <tr>
+      <td>{{ e.label }}</td>
+      <td>{{ e.filename }}</td>
+      <td>{{ e.size|filesizeformat }}</td>
+      <td>{{ e.created_at|date:"Y-m-d H:i" }}</td>
+      <td>
+        {% if e.category == "PROFILE" %}
+        <a class="btn btn-sm btn-outline-secondary" href="{% url 'vault_profile' %}">View</a>
+        {% endif %}
+        {% for c in ciphers %}
+        <a class="btn btn-sm btn-outline-secondary" href="{% url 'vault_download' e.id %}?cipher={{ c }}">{{ c|upper }}</a>
+        {% endfor %}
+      </td>
+      <td>
+        <form method="post" action="{% url 'vault_delete' e.id %}" onsubmit="return confirm('Delete this item permanently?');">
+          {% csrf_token %}
+          <button class="btn btn-sm btn-outline-danger">Delete</button>
+        </form>
+      </td>
+    </tr>
+  {% endfor %}
+  </tbody>
+</table>
+{% else %}
+<div class="alert alert-info">Nothing stored yet. Start with your personal data, then add your ID card.</div>
+{% endif %}
+{% endblock content %}

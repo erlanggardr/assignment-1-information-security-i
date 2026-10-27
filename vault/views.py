@@ -6,10 +6,14 @@ from django.contrib import messages
 from django.contrib.auth import logout
 from django.contrib.auth.decorators import login_required
 from django.contrib.auth.views import redirect_to_login
-from django.shortcuts import render
+from django.http import Http404, HttpResponse, HttpResponseBadRequest
+from django.shortcuts import redirect, render
+from django.utils.http import content_disposition_header
+from django.views.decorators.http import require_POST
 
-from . import bench, keys, sealing, service
+from . import bench, keys, sealing, service, storage
 from . import crypto_engine as ce
+from .forms import ProfileForm, UploadForm
 
 MAX_UPLOAD_BYTES = 64 * 1024 * 1024
 
@@ -91,3 +95,83 @@ def _bounded_int(raw, default, low, high):
         return max(low, min(int(raw), high))
     except (TypeError, ValueError):
         return default
+
+
+UPLOAD_SLUGS = {
+    "id-card": (storage.ID_CARD, "Upload ID card image"),
+    "office": (storage.OFFICE, "Upload office document"),
+    "video": (storage.VIDEO, "Upload verification video"),
+}
+
+
+@vault_unlocked
+def dashboard(request, muk):
+    entries = storage.list_entries(request.user, muk)
+    return render(request, "vault/dashboard.html", {"entries": entries, "ciphers": ce.CIPHERS})
+
+
+@vault_unlocked
+def profile(request, muk):
+    existing = storage.load_profile(request.user, muk)
+    if request.method == "POST":
+        form = ProfileForm(request.POST)
+        if form.is_valid():
+            storage.store_profile(request.user, muk, form.to_fields())
+            messages.success(request, "Personal data saved, encrypted with AES, DES and RC4.")
+            return redirect("vault_dashboard")
+        return render(request, "vault/profile.html", {"form": form}, status=400)
+    return render(request, "vault/profile.html", {"form": ProfileForm(initial=existing), "has_profile": bool(existing)})
+
+
+@vault_unlocked
+def upload(request, muk, slug):
+    if slug not in UPLOAD_SLUGS:
+        raise Http404
+    category, title = UPLOAD_SLUGS[slug]
+    if request.method == "POST":
+        form = UploadForm(request.POST, request.FILES, category=category)
+        if form.is_valid():
+            f = form.cleaned_data["file"]
+            data = b"".join(f.chunks())
+            try:
+                storage.store_file(request.user, muk, category, f.name, data)
+            except storage.UploadRejected as exc:
+                form.add_error("file", str(exc))
+            else:
+                messages.success(request, f"{title.removeprefix('Upload ').capitalize()} stored, encrypted with AES, DES and RC4.")
+                return redirect("vault_dashboard")
+        return render(request, "vault/upload.html", {"form": form, "title": title}, status=400)
+    return render(request, "vault/upload.html", {"form": UploadForm(category=category), "title": title})
+
+
+@vault_unlocked
+def download(request, muk, object_id):
+    cipher = request.GET.get("cipher", "aes")
+    if cipher not in ce.CIPHERS:
+        return HttpResponseBadRequest("Unknown cipher.")
+    try:
+        item = storage.load_object(request.user, muk, object_id, cipher)
+    except storage.ObjectNotFound:
+        raise Http404
+    except ce.IntegrityError:
+        return render(request, "vault/integrity_error.html", {"cipher": cipher.upper()}, status=409)
+    resp = HttpResponse(item.data, content_type=item.mime)
+    resp["Content-Disposition"] = content_disposition_header(True, item.filename)
+    resp["X-Content-Type-Options"] = "nosniff"
+    resp["Cache-Control"] = "no-store"
+    resp["Server-Timing"] = (
+        f"io;dur={item.io_ns / 1e6:.3f}, unwrap;dur={item.unwrap_ns / 1e6:.3f}, "
+        f"decrypt;dur={item.decrypt_ns / 1e6:.3f}, verify;dur={item.verify_ns / 1e6:.3f}"
+    )
+    return resp
+
+
+@require_POST
+@vault_unlocked
+def delete(request, muk, object_id):
+    try:
+        storage.delete_object(request.user, object_id)
+    except storage.ObjectNotFound:
+        raise Http404
+    messages.success(request, "Item deleted.")
+    return redirect("vault_dashboard")

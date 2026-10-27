@@ -8,8 +8,10 @@ A Django web application demonstrating symmetric encryption (AES, DES, RC4) and 
 - **Multi-Cipher Sealing:** Stores encrypted copies using all three ciphers alongside keyed integrity digests.
 - **Key Management:** Password-derived KEK protecting Master User Keys (MUK) and per-object data keys.
 - **In-Memory Session Keyring:** Unlocked master keys remain in server memory during active sessions.
+- **Encrypted Storage:** Personal data (database), ID card images, office documents (PDF/DOC/XLS) and videos are each stored as three ciphertext copies (AES, DES, RC4). Small copies live in the database row, large ones on disk under opaque UUID names; file names and MIME types are encrypted too. Only the owner can download an item, and every download is verified (HMAC tag plus keyed plaintext digest).
 - **Web Interface:**
   - User authentication (sign up, log in, password change).
+  - Vault dashboard, personal data form, and upload pages for ID card, office document and video; download with a choice of cipher.
   - Encrypt demo page for testing text and file encryption.
   - Benchmark page comparing speed, throughput, and overhead across ciphers.
 
@@ -45,7 +47,7 @@ Requires Python 3.12+.
    python manage.py runserver
    ```
 
-Open http://127.0.0.1:8000 in your browser, register a new account, and access the **Encrypt Demo** and **Benchmark** pages in the navigation bar.
+Open http://127.0.0.1:8000 in your browser, register a new account, and use **My vault** to store and retrieve your data. The **Encrypt Demo** and **Benchmark** pages are in the navigation bar. Encrypted files are written to `vault_data/` (git-ignored).
 
 ## Running Tests
 

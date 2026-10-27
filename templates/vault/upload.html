@@ -1,0 +1,12 @@
+{% extends "_base.html" %}
+{% load crispy_forms_tags %}
+{% block title %}{{ title }}{% endblock title %}
+{% block content %}
+<h2 class="mt-4">{{ title }}</h2>
+<form method="post" enctype="multipart/form-data" class="card card-body mb-4">
+  {% csrf_token %}
+  {{ form|crispy }}
+  <button class="btn btn-primary align-self-start">Encrypt and store</button>
+</form>
+<a href="{% url 'vault_dashboard' %}">Back to my vault</a>
+{% endblock content %}

@@ -6,8 +6,8 @@
   <meta charset="utf-8">
   <meta http-equiv="X-UA-Compatible" content="IE=edge,chrome=1">
   <meta name="viewport" content="width=device-width,minimum-scale=1,initial-scale=1">
-  <title>{% block title %}Lithium{% endblock title %}</title>
-  <meta name="description" content="A framework for launching new Django projects quickly.">
+  <title>{% block title %}FinSecure{% endblock title %}</title>
+  <meta name="description" content="FinSecure: encrypted e-KYC data vault">
   <meta name="author" content="">
   <link rel="shortcut icon" type="image/x-icon" href="{% static 'images/favicon.ico' %}">
 
@@ -23,7 +23,7 @@
 <body>
   <nav class="navbar navbar-expand-lg bg-body-tertiary">
     <div class="container-fluid">
-      <a class="navbar-brand" href="{% url 'home' %}">Lithium</a>
+      <a class="navbar-brand" href="{% url 'home' %}">FinSecure</a>
       <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarSupportedContent"
         aria-controls="navbarSupportedContent" aria-expanded="false" aria-label="Toggle navigation">
         <span class="navbar-toggler-icon"></span>
@@ -37,6 +37,9 @@
             <a class="nav-link" href="{% url 'about' %}">About</a>
           </li>
           {% if user.is_authenticated %}
+          <li class="nav-item">
+            <a class="nav-link" href="{% url 'vault_dashboard' %}">My vault</a>
+          </li>
           <li class="nav-item">
             <a class="nav-link" href="{% url 'vault_demo' %}">Encrypt demo</a>
           </li>
@@ -77,6 +80,9 @@
   </nav>
 
   <div class="container">
+    {% for message in messages %}
+    <div class="alert alert-{% if message.tags == 'error' %}danger{% else %}{{ message.tags }}{% endif %} mt-3">{{ message }}</div>
+    {% endfor %}
     {% block content %}
     <p>Default content...</p>
     {% endblock content %}
@@ -84,7 +90,7 @@
 
   <footer class="footer">
     <div class="container">
-      <span class="text-muted">Footer...</span>
+      <span class="text-muted">FinSecure &middot; your e-KYC data is encrypted. Only you can open it.</span>
     </div>
   </footer>
 
