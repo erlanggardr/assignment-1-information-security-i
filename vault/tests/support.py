@@ -10,7 +10,7 @@ no_manifest = override_settings(
 
 
 def new_client():
-    # allauth rate-limits signups per IP in the cache; every test signs up, so start each client clean.
+    # allauth rate-limits signups per ip and tests sign up a lot
     cache.clear()
     return Client(HTTP_HOST="127.0.0.1")
 

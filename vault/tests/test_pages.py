@@ -274,3 +274,94 @@ class OnboardingTests(PageBase):
             self.assertIn("Why we ask", html)
             self.assertIn(text, html)
         self.assertIn("UU PDP", self.client.get(reverse("vault_profile")).content.decode())
+
+
+class LoanTests(PageBase):
+    video = b"\x00\x00\x00\x18ftypmp42" + os.urandom(2000)
+
+    def finish_kyc(self, client=None):
+        c = client or self.client
+        c.post(reverse("vault_profile"), PROFILE_POST)
+        self.put("id-card", "ktp.png", PNG, client=c)
+        self.put("office", "slip.pdf", PDF, client=c)
+        self.put("video", "live.mp4", self.video, client=c)
+
+    def ask(self, amount="2000000", purpose="daily", client=None):
+        return (client or self.client).post(reverse("vault_loan"), {"amount": amount, "purpose": purpose})
+
+    def loans(self):
+        return StoredObject.objects.filter(category=storage.LOAN)
+
+    def test_loan_is_locked_until_kyc_is_complete(self):
+        self.assertRedirects(self.client.get(reverse("vault_loan")), reverse("vault_dashboard"), fetch_redirect_response=False)
+        self.ask()
+        self.assertEqual(self.loans().count(), 0)
+
+    def test_each_missing_step_keeps_the_loan_locked(self):
+        uploads = [("id-card", "ktp.png", PNG), ("office", "slip.pdf", PDF), ("video", "live.mp4", self.video)]
+        for skip in range(4):
+            c = new_client()
+            signup(c, f"user{skip}", PASSWORD)
+            if skip != 0:
+                c.post(reverse("vault_profile"), PROFILE_POST)
+            for i, (slug, name, data) in enumerate(uploads, start=1):
+                if i != skip:
+                    self.put(slug, name, data, client=c)
+            self.ask(client=c)
+        self.assertEqual(self.loans().count(), 0)
+
+    def test_request_after_kyc_is_stored_and_shown(self):
+        self.finish_kyc()
+        resp = self.ask("3500000", "education")
+        self.assertRedirects(resp, reverse("vault_dashboard"), fetch_redirect_response=False)
+        html = self.client.get(reverse("vault_dashboard")).content.decode()
+        self.assertIn("3,500,000", html)
+        self.assertIn("education", html)
+        self.assertEqual(self.loans().count(), 1)
+
+    def test_loan_is_encrypted_like_everything_else(self):
+        self.finish_kyc()
+        self.ask("3500000", "education")
+        obj = self.loans().get()
+        for cipher in ("aes", "des", "rc4"):
+            self.assertNotIn(b"3500000", bytes(getattr(obj, f"{cipher}_inline")))
+            resp = self.client.get(reverse("vault_download", args=[obj.id]), {"cipher": cipher})
+            self.assertIn(b"3500000", resp.content)
+
+    def test_only_one_request_at_a_time(self):
+        self.finish_kyc()
+        self.ask()
+        self.ask("1000000")
+        self.assertEqual(self.loans().count(), 1)
+
+    def test_withdraw_allows_a_new_request(self):
+        self.finish_kyc()
+        self.ask()
+        self.client.post(reverse("vault_delete", args=[self.loans().get().id]))
+        self.ask("1000000", "medical")
+        self.assertEqual(self.loans().count(), 1)
+
+    def test_amount_limits(self):
+        self.finish_kyc()
+        for bad in ("0", "499999", "10000001", "-5", "abc", ""):
+            self.assertEqual(self.ask(bad).status_code, 400, bad)
+        self.assertEqual(self.ask(purpose="gold").status_code, 400)
+        self.assertEqual(self.loans().count(), 0)
+
+    def test_dashboard_marks_the_loan_step(self):
+        ctx = self.client.get(reverse("vault_dashboard")).context
+        self.assertFalse(ctx["complete"])
+        self.assertIn("Locked", self.client.get(reverse("vault_dashboard")).content.decode())
+        self.finish_kyc()
+        self.assertTrue(self.client.get(reverse("vault_dashboard")).context["complete"])
+
+    def test_loan_belongs_to_its_owner(self):
+        self.finish_kyc()
+        self.ask("3500000")
+        bob = new_client()
+        signup(bob, "bob", PASSWORD)
+        self.assertNotIn("3,500,000", bob.get(reverse("vault_dashboard")).content.decode())
+        self.assertEqual(bob.get(reverse("vault_download", args=[self.loans().get().id])).status_code, 404)
+
+    def test_login_required(self):
+        self.assertEqual(new_client().get(reverse("vault_loan")).status_code, 302)
