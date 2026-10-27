@@ -1,8 +1,9 @@
 {% extends "_base.html" %}
 {% load crispy_forms_tags %}
-{% block title %}Personal data{% endblock title %}
+{% block title %}Personal details{% endblock title %}
 {% block content %}
-<h2 class="mt-4">Personal data</h2>
+<h2 class="mt-4">Step 1 · Personal details</h2>
+{% include "vault/_step_note.html" %}
 <p class="text-muted">Saved as one encrypted record. Saving again replaces the previous version.
   {% if has_profile %}Your stored values are shown below, decrypted for you only.{% endif %}</p>
 <form method="post" class="card card-body mb-4">

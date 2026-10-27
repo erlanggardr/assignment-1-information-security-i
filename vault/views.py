@@ -97,6 +97,49 @@ def _bounded_int(raw, default, low, high):
         return default
 
 
+# The onboarding steps a new customer completes before a bank can open the account.
+STEPS = [
+    {
+        "category": storage.PROFILE,
+        "title": "Personal details",
+        "why": "Your identity details are needed to open the account and to check you against your ID card.",
+        "kind": "General and financial personal data",
+        "law": "UU PDP Art. 4(3), 4(2)(f) · GDPR Art. 4(1)",
+        "url": "vault_profile",
+        "action": "Fill in",
+    },
+    {
+        "category": storage.ID_CARD,
+        "title": "ID card (e-KTP)",
+        "why": "A photo of your e-KTP proves who you are. It carries your face photo, signature and religion.",
+        "kind": "Biometric data (face, signature)",
+        "law": "UU PDP Art. 4(2)(b) · GDPR Art. 9",
+        "slug": "id-card",
+        "action": "Upload",
+    },
+    {
+        "category": storage.OFFICE,
+        "title": "Proof of income",
+        "why": "A payslip, employer letter or tax return (PDF, DOC, XLS) shows the bank you can afford the product.",
+        "kind": "Personal financial data",
+        "law": "UU PDP Art. 4(2)(f)",
+        "slug": "office",
+        "action": "Upload",
+    },
+    {
+        "category": storage.VIDEO,
+        "title": "Liveness video",
+        "why": "A short selfie video (you record it on your phone and upload the file) confirms a real person is applying and matches the face on your ID.",
+        "kind": "Biometric data (face, voice)",
+        "law": "UU PDP Art. 4(2)(b) · GDPR Art. 9",
+        "slug": "video",
+        "action": "Upload",
+    },
+]
+STEP_BY_SLUG = {s["slug"]: s for s in STEPS if "slug" in s}
+PROFILE_STEP = STEPS[0]
+
+
 UPLOAD_SLUGS = {
     "id-card": (storage.ID_CARD, "Upload ID card image"),
     "office": (storage.OFFICE, "Upload office document"),
@@ -107,7 +150,20 @@ UPLOAD_SLUGS = {
 @vault_unlocked
 def dashboard(request, muk):
     entries = storage.list_entries(request.user, muk)
-    return render(request, "vault/dashboard.html", {"entries": entries, "ciphers": ce.CIPHERS})
+    steps = []
+    for number, step in enumerate(STEPS, start=1):
+        items = [e for e in entries if e["category"] == step["category"]]
+        steps.append({**step, "number": number, "items": items, "done": bool(items)})
+    done = sum(1 for step in steps if step["done"])
+    context = {
+        "steps": steps,
+        "done": done,
+        "total": len(steps),
+        "percent": done * 100 // len(steps),
+        "complete": done == len(steps),
+        "ciphers": ce.CIPHERS,
+    }
+    return render(request, "vault/dashboard.html", context)
 
 
 @vault_unlocked
@@ -119,8 +175,9 @@ def profile(request, muk):
             storage.store_profile(request.user, muk, form.to_fields())
             messages.success(request, "Personal data saved, encrypted with AES, DES and RC4.")
             return redirect("vault_dashboard")
-        return render(request, "vault/profile.html", {"form": form}, status=400)
-    return render(request, "vault/profile.html", {"form": ProfileForm(initial=existing), "has_profile": bool(existing)})
+        return render(request, "vault/profile.html", {"form": form, "step": PROFILE_STEP}, status=400)
+    context = {"form": ProfileForm(initial=existing), "has_profile": bool(existing), "step": PROFILE_STEP}
+    return render(request, "vault/profile.html", context)
 
 
 @vault_unlocked
@@ -140,8 +197,10 @@ def upload(request, muk, slug):
             else:
                 messages.success(request, f"{title.removeprefix('Upload ').capitalize()} stored, encrypted with AES, DES and RC4.")
                 return redirect("vault_dashboard")
-        return render(request, "vault/upload.html", {"form": form, "title": title}, status=400)
-    return render(request, "vault/upload.html", {"form": UploadForm(category=category), "title": title})
+        return render(request, "vault/upload.html", {"form": form, "title": title, "step": STEP_BY_SLUG[slug]}, status=400)
+    return render(
+        request, "vault/upload.html", {"form": UploadForm(category=category), "title": title, "step": STEP_BY_SLUG[slug]}
+    )
 
 
 @vault_unlocked

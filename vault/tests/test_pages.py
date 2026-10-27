@@ -227,3 +227,50 @@ class ProfileTests(PageBase):
         self.assertIn("Budi Santoso", c.get(reverse("vault_profile")).content.decode())
         oid = self.first_id(storage.ID_CARD)
         self.assertEqual(c.get(reverse("vault_download", args=[oid])).content, PNG)
+
+
+class OnboardingTests(PageBase):
+    def html(self):
+        return self.client.get(reverse("vault_dashboard")).content.decode()
+
+    def test_new_customer_sees_four_steps_all_pending(self):
+        ctx = self.client.get(reverse("vault_dashboard")).context
+        self.assertEqual(ctx["done"], 0)
+        self.assertEqual(ctx["total"], 4)
+        self.assertEqual([s["title"] for s in ctx["steps"]], [
+            "Personal details", "ID card (e-KTP)", "Proof of income", "Liveness video",
+        ])
+        self.assertFalse(any(s["done"] for s in ctx["steps"]))
+
+    def test_progress_follows_what_is_stored(self):
+        self.client.post(reverse("vault_profile"), PROFILE_POST)
+        self.put("id-card", "ktp.png", PNG)
+        ctx = self.client.get(reverse("vault_dashboard")).context
+        self.assertEqual((ctx["done"], ctx["percent"], ctx["complete"]), (2, 50, False))
+
+    def test_all_steps_complete(self):
+        video = b"\x00\x00\x00\x18ftypmp42" + os.urandom(2000)
+        self.client.post(reverse("vault_profile"), PROFILE_POST)
+        self.put("id-card", "ktp.png", PNG)
+        self.put("office", "slip.pdf", PDF)
+        self.put("video", "live.mp4", video)
+        ctx = self.client.get(reverse("vault_dashboard")).context
+        self.assertEqual((ctx["done"], ctx["percent"], ctx["complete"]), (4, 100, True))
+
+    def test_progress_is_per_customer(self):
+        self.put("id-card", "ktp.png", PNG)
+        bob = new_client()
+        signup(bob, "bob", PASSWORD)
+        self.assertEqual(bob.get(reverse("vault_dashboard")).context["done"], 0)
+
+    def test_deleting_an_item_reopens_its_step(self):
+        self.put("id-card", "ktp.png", PNG)
+        self.client.post(reverse("vault_delete", args=[self.first_id(storage.ID_CARD)]))
+        self.assertEqual(self.client.get(reverse("vault_dashboard")).context["done"], 0)
+
+    def test_step_pages_explain_why_and_the_legal_class(self):
+        for slug, text in (("id-card", "Biometric"), ("office", "financial"), ("video", "Biometric")):
+            html = self.client.get(reverse("vault_upload", args=[slug])).content.decode()
+            self.assertIn("Why we ask", html)
+            self.assertIn(text, html)
+        self.assertIn("UU PDP", self.client.get(reverse("vault_profile")).content.decode())

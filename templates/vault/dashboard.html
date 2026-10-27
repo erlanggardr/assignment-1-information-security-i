@@ -1,44 +1,74 @@
 {% extends "_base.html" %}
-{% block title %}My vault{% endblock title %}
+{% block title %}Open your account{% endblock title %}
 {% block content %}
-<h2 class="mt-4">My vault</h2>
-<p class="text-muted">Each item is stored three times, once per cipher. Pick a cipher when you download to compare them;
-  the file you get back is checked against the digest taken when you uploaded it.</p>
-<div class="mb-3 d-flex flex-wrap gap-2">
-  <a class="btn btn-primary" href="{% url 'vault_profile' %}">Personal data</a>
-  <a class="btn btn-outline-primary" href="{% url 'vault_upload' 'id-card' %}">Upload ID card</a>
-  <a class="btn btn-outline-primary" href="{% url 'vault_upload' 'office' %}">Upload document</a>
-  <a class="btn btn-outline-primary" href="{% url 'vault_upload' 'video' %}">Upload video</a>
+<h2 class="mt-4">Open your account</h2>
+<p class="text-muted">FinSecure needs four things to verify you as you. Each is stored encrypted, and only you can open them again.</p>
+
+<div class="card card-body mb-4">
+  <div class="d-flex justify-content-between mb-1">
+    <strong>Application checklist</strong><span>{{ done }} of {{ total }} steps complete</span>
+  </div>
+  <div class="progress" role="progressbar" aria-valuenow="{{ percent }}" aria-valuemin="0" aria-valuemax="100">
+    <div class="progress-bar {% if complete %}bg-success{% endif %}" style="width: {{ percent }}%"></div>
+  </div>
+  {% if complete %}
+  <p class="text-success mb-0 mt-2">All documents are in. They stay in your vault until you delete them.</p>
+  {% endif %}
 </div>
-{% if entries %}
-<table class="table align-middle">
-  <thead><tr><th>Type</th><th>Name</th><th>Size</th><th>Stored</th><th>Download</th><th></th></tr></thead>
-  <tbody>
-  {% for e in entries %}
-    <tr>
-      <td>{{ e.label }}</td>
-      <td>{{ e.filename }}</td>
-      <td>{{ e.size|filesizeformat }}</td>
-      <td>{{ e.created_at|date:"Y-m-d H:i" }}</td>
-      <td>
-        {% if e.category == "PROFILE" %}
-        <a class="btn btn-sm btn-outline-secondary" href="{% url 'vault_profile' %}">View</a>
+
+{% for step in steps %}
+<div class="card mb-3">
+  <div class="card-body">
+    <div class="d-flex justify-content-between align-items-start flex-wrap gap-2">
+      <div>
+        <h5 class="mb-1">
+          {{ step.number }}. {{ step.title }}
+          {% if step.done %}<span class="badge text-bg-success ms-1">Done</span>{% else %}<span class="badge text-bg-secondary ms-1">To do</span>{% endif %}
+        </h5>
+        <p class="mb-1">{{ step.why }}</p>
+        <p class="small text-muted mb-0">{{ step.kind }} &middot; {{ step.law }}</p>
+      </div>
+      <div>
+        {% if step.url %}
+        <a class="btn {% if step.done %}btn-outline-primary{% else %}btn-primary{% endif %}" href="{% url step.url %}">{% if step.done %}Edit{% else %}{{ step.action }}{% endif %}</a>
+        {% else %}
+        <a class="btn {% if step.done %}btn-outline-primary{% else %}btn-primary{% endif %}" href="{% url 'vault_upload' step.slug %}">{% if step.done %}Add another{% else %}{{ step.action }}{% endif %}</a>
         {% endif %}
-        {% for c in ciphers %}
-        <a class="btn btn-sm btn-outline-secondary" href="{% url 'vault_download' e.id %}?cipher={{ c }}">{{ c|upper }}</a>
-        {% endfor %}
-      </td>
-      <td>
-        <form method="post" action="{% url 'vault_delete' e.id %}" onsubmit="return confirm('Delete this item permanently?');">
-          {% csrf_token %}
-          <button class="btn btn-sm btn-outline-danger">Delete</button>
-        </form>
-      </td>
-    </tr>
-  {% endfor %}
-  </tbody>
-</table>
-{% else %}
-<div class="alert alert-info">Nothing stored yet. Start with your personal data, then add your ID card.</div>
-{% endif %}
+      </div>
+    </div>
+    {% if step.items %}
+    <table class="table table-sm align-middle mt-3 mb-0">
+      <thead><tr><th>Name</th><th>Size</th><th>Stored</th><th>Download as</th><th></th></tr></thead>
+      <tbody>
+      {% for e in step.items %}
+        <tr>
+          <td>{{ e.filename }}</td>
+          <td>{{ e.size|filesizeformat }}</td>
+          <td>{{ e.created_at|date:"Y-m-d H:i" }}</td>
+          <td>
+            {% for c in ciphers %}
+            <a class="btn btn-sm btn-outline-secondary" href="{% url 'vault_download' e.id %}?cipher={{ c }}">{{ c|upper }}</a>
+            {% endfor %}
+          </td>
+          <td>
+            <form method="post" action="{% url 'vault_delete' e.id %}" onsubmit="return confirm('Delete this item permanently?');">
+              {% csrf_token %}
+              <button class="btn btn-sm btn-outline-danger">Delete</button>
+            </form>
+          </td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+    {% endif %}
+  </div>
+</div>
+{% endfor %}
+
+<div class="card card-body bg-light mb-4">
+  <h6>How your data is protected</h6>
+  <ul class="small mb-0">
+    <li>Your password unlocks a personal key; the server stores only an encrypted copy of it.</li>
+  </ul>
+</div>
 {% endblock content %}
