@@ -207,6 +207,17 @@ ACCOUNT_SESSION_REMEMBER = True
 ACCOUNT_LOGIN_METHODS = {"username"}
 ACCOUNT_SIGNUP_FIELDS = ["username*", "password1*", "password2*"]
 
+# The vault key is created, unlocked and re-wrapped inside these forms because
+# they are the only place the raw password is available.
+ACCOUNT_FORMS = {
+    "login": "vault.forms.VaultLoginForm",
+    "signup": "vault.forms.VaultSignupForm",
+    "change_password": "vault.forms.VaultChangePasswordForm",
+}
+
+# How long an unlocked master key stays in server memory without being used.
+VAULT_KEY_TTL_SECONDS = 3600
+
 # https://docs.djangoproject.com/en/dev/ref/settings/#csrf-trusted-origins
 CSRF_TRUSTED_ORIGINS = [
     "http://localhost:8000",  # Default Django dev server
