@@ -4,15 +4,18 @@ A Django web application demonstrating symmetric encryption (AES, DES, RC4) and 
 
 ## Features
 
-- **Symmetric Ciphers:** AES-256-CBC, DES-CBC, and RC4 with authenticated envelopes.
+- **Symmetric Ciphers:** AES-256-CBC, DES-CBC, and RC4 with authenticated envelopes (Encrypt-then-MAC).
+- **Multi-Cipher Sealing:** Stores encrypted copies using all three ciphers alongside keyed integrity digests.
+- **Key Management:** Password-derived KEK protecting Master User Keys (MUK) and per-object data keys.
+- **In-Memory Session Keyring:** Unlocked master keys remain in server memory during active sessions.
 - **Web Interface:**
-  - User authentication (sign up, log in).
+  - User authentication (sign up, log in, password change).
   - Encrypt demo page for testing text and file encryption.
   - Benchmark page comparing speed, throughput, and overhead across ciphers.
 
 ## Project Structure
 
-- `vault/` - Core encryption engine and benchmark utilities.
+- `vault/` - Core encryption engine, key hierarchy, keyring, and benchmark utilities.
 - `accounts/` - User registration, authentication, and custom user model.
 - `pages/` - Basic template views (home, about).
 - `django_project/` - Project settings, URLs, and WSGI/ASGI configuration.
