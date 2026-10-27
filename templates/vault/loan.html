@@ -1,0 +1,13 @@
+{% extends "_base.html" %}
+{% load crispy_forms_tags %}
+{% block title %}Request a loan{% endblock title %}
+{% block content %}
+<h2 class="mt-4">Request a loan</h2>
+{% include "vault/_step_note.html" %}
+<form method="post" class="card card-body mb-4">
+  {% csrf_token %}
+  {{ form|crispy }}
+  <button class="btn btn-primary align-self-start">Send request</button>
+</form>
+<a href="{% url 'vault_dashboard' %}">Back</a>
+{% endblock content %}

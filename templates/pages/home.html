@@ -5,25 +5,28 @@
 {% block content %}
 <div class="px-3 py-4 pt-md-5 pb-md-4 mx-auto text-center">
   <h1 class="display-5">FinSecure</h1>
-  <p class="lead">A vault for the documents a digital bank asks for during e-KYC. Everything you upload is
-    encrypted with AES, DES and RC4, and only you can get it back.</p>
+  <p class="lead">Online loans with identity verification (e-KYC). Send your documents once; they are stored
+    encrypted with AES, DES and RC4 and only you can open them.</p>
   {% if user.is_authenticated %}
-  <a href="{% url 'vault_dashboard' %}" class="btn btn-primary btn-lg">Open my vault</a>
+  <a href="{% url 'vault_dashboard' %}" class="btn btn-primary btn-lg">Continue my application</a>
   {% else %}
-  <a href="{% url 'account_signup' %}" class="btn btn-primary btn-lg">Create an account</a>
+  <a href="{% url 'account_signup' %}" class="btn btn-primary btn-lg">Apply now</a>
   <a href="{% url 'account_login' %}" class="btn btn-outline-secondary btn-lg ms-2">Log in</a>
   {% endif %}
 </div>
+<h4 class="text-center mb-3">What we ask for</h4>
 <div class="row g-3 mb-4">
-  <div class="col-md-3"><div class="card h-100 card-body"><h5>Personal data</h5>
-    <p class="small mb-0">Name, NIK, mother's maiden name, address, bank account and net worth.
-      General and financial personal data.</p></div></div>
-  <div class="col-md-3"><div class="card h-100 card-body"><h5>ID card image</h5>
-    <p class="small mb-0">e-KTP scan with face photo and signature: biometric data.</p></div></div>
-  <div class="col-md-3"><div class="card h-100 card-body"><h5>Office documents</h5>
-    <p class="small mb-0">Payslips, employer letters and tax returns (PDF, DOC, XLS):
-      personal financial data.</p></div></div>
-  <div class="col-md-3"><div class="card h-100 card-body"><h5>Verification video</h5>
-    <p class="small mb-0">Face and voice recording for liveness: biometric data.</p></div></div>
+  <div class="col-md-3"><div class="card h-100 card-body"><h5>Personal details</h5>
+    <p class="small mb-0">Name, NIK, mother's maiden name, address, bank account and net worth
+      (UU PDP Art. 4(3), 4(2)(f)).</p></div></div>
+  <div class="col-md-3"><div class="card h-100 card-body"><h5>ID card</h5>
+    <p class="small mb-0">e-KTP photo with your face and signature, which count as biometric data
+      (UU PDP Art. 4(2)(b)).</p></div></div>
+  <div class="col-md-3"><div class="card h-100 card-body"><h5>Proof of income</h5>
+    <p class="small mb-0">Payslip, employer letter or tax return as PDF, DOC or XLS
+      (UU PDP Art. 4(2)(f)).</p></div></div>
+  <div class="col-md-3"><div class="card h-100 card-body"><h5>Selfie video</h5>
+    <p class="small mb-0">Face and voice recording to confirm it is really you
+      (UU PDP Art. 4(2)(b)).</p></div></div>
 </div>
 {% endblock content %}

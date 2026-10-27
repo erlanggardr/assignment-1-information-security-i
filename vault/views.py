@@ -11,9 +11,9 @@ from django.shortcuts import redirect, render
 from django.utils.http import content_disposition_header
 from django.views.decorators.http import require_POST
 
-from . import bench, keys, sealing, service, storage
+from . import bench, bench_vault, keys, sealing, service, storage
 from . import crypto_engine as ce
-from .forms import ProfileForm, UploadForm
+from .forms import LoanForm, ProfileForm, UploadForm
 
 MAX_UPLOAD_BYTES = 64 * 1024 * 1024
 
@@ -78,6 +78,15 @@ def benchmark(request, muk):
     if request.method != "POST":
         return render(request, "vault/benchmark.html", context)
 
+    if request.POST.get("kind") in ("items", "analysis"):
+        context["env"] = bench.environment()
+        if request.POST.get("kind") == "items":
+            downloads = _bounded_int(request.POST.get("downloads"), default=10, low=1, high=30)
+            context.update(item_rows=bench_vault.run_item_downloads(request.user, muk, downloads), item_downloads=downloads, ran_items=True)
+        else:
+            context["analysis_rows"] = bench_vault.compare_ciphertexts()
+        return render(request, "vault/benchmark.html", context)
+
     chosen = request.POST.getlist("sizes")
     sizes = {k: v for k, v in bench.DEFAULT_SIZES.items() if k in chosen} or {"1 MB": 1024**2}
     context["env"] = bench.environment()
@@ -97,12 +106,11 @@ def _bounded_int(raw, default, low, high):
         return default
 
 
-# The onboarding steps a new customer completes before a bank can open the account.
 STEPS = [
     {
         "category": storage.PROFILE,
         "title": "Personal details",
-        "why": "Your identity details are needed to open the account and to check you against your ID card.",
+        "why": "We use these details to check who you are and to match you against your ID card.",
         "kind": "General and financial personal data",
         "law": "UU PDP Art. 4(3), 4(2)(f) · GDPR Art. 4(1)",
         "url": "vault_profile",
@@ -120,7 +128,7 @@ STEPS = [
     {
         "category": storage.OFFICE,
         "title": "Proof of income",
-        "why": "A payslip, employer letter or tax return (PDF, DOC, XLS) shows the bank you can afford the product.",
+        "why": "A payslip, employer letter or tax return (PDF, DOC, XLS) shows that you can repay a loan.",
         "kind": "Personal financial data",
         "law": "UU PDP Art. 4(2)(f)",
         "slug": "office",
@@ -129,7 +137,7 @@ STEPS = [
     {
         "category": storage.VIDEO,
         "title": "Liveness video",
-        "why": "A short selfie video (you record it on your phone and upload the file) confirms a real person is applying and matches the face on your ID.",
+        "why": "A short selfie video (record it on your phone, then upload the file) confirms a real person is applying and matches the face on your ID.",
         "kind": "Biometric data (face, voice)",
         "law": "UU PDP Art. 4(2)(b) · GDPR Art. 9",
         "slug": "video",
@@ -140,10 +148,16 @@ STEP_BY_SLUG = {s["slug"]: s for s in STEPS if "slug" in s}
 PROFILE_STEP = STEPS[0]
 
 
+LOAN_STEP = {
+    "kind": "Personal financial data",
+    "law": "UU PDP Art. 4(2)(f)",
+    "why": "Tell us how much you want to borrow. You can only apply once every KYC step is done.",
+}
+
 UPLOAD_SLUGS = {
     "id-card": (storage.ID_CARD, "Upload ID card image"),
     "office": (storage.OFFICE, "Upload office document"),
-    "video": (storage.VIDEO, "Upload verification video"),
+    "video": (storage.VIDEO, "Upload liveness video"),
 }
 
 
@@ -155,12 +169,20 @@ def dashboard(request, muk):
         items = [e for e in entries if e["category"] == step["category"]]
         steps.append({**step, "number": number, "items": items, "done": bool(items)})
     done = sum(1 for step in steps if step["done"])
+    complete = done == len(steps)
+    loan = storage.load_loan(request.user, muk) if complete else None
+    if loan:
+        loan["purpose_label"] = dict(LoanForm.PURPOSES).get(loan["purpose"], loan["purpose"])
+    loan_items = [e for e in entries if e["category"] == storage.LOAN]
     context = {
         "steps": steps,
+        "loan": loan,
+        "loan_items": loan_items,
+        "loan_why": LOAN_STEP["why"],
         "done": done,
         "total": len(steps),
         "percent": done * 100 // len(steps),
-        "complete": done == len(steps),
+        "complete": complete,
         "ciphers": ce.CIPHERS,
     }
     return render(request, "vault/dashboard.html", context)
@@ -195,7 +217,7 @@ def upload(request, muk, slug):
             except storage.UploadRejected as exc:
                 form.add_error("file", str(exc))
             else:
-                messages.success(request, f"{title.removeprefix('Upload ').capitalize()} stored, encrypted with AES, DES and RC4.")
+                messages.success(request, f"{STEP_BY_SLUG[slug]['title']} stored, encrypted with AES, DES and RC4.")
                 return redirect("vault_dashboard")
         return render(request, "vault/upload.html", {"form": form, "title": title, "step": STEP_BY_SLUG[slug]}, status=400)
     return render(
@@ -234,3 +256,22 @@ def delete(request, muk, object_id):
         raise Http404
     messages.success(request, "Item deleted.")
     return redirect("vault_dashboard")
+
+
+@vault_unlocked
+def loan(request, muk):
+    if storage.kyc_missing(request.user):
+        messages.warning(request, "Finish all four KYC steps before requesting a loan.")
+        return redirect("vault_dashboard")
+    if request.method == "POST":
+        form = LoanForm(request.POST)
+        if form.is_valid():
+            try:
+                storage.store_loan(request.user, muk, form.cleaned_data["amount"], form.cleaned_data["purpose"])
+            except storage.LoanRejected as exc:
+                messages.error(request, str(exc))
+                return redirect("vault_dashboard")
+            messages.success(request, "Loan request sent.")
+            return redirect("vault_dashboard")
+        return render(request, "vault/loan.html", {"form": form, "step": LOAN_STEP}, status=400)
+    return render(request, "vault/loan.html", {"form": LoanForm(), "step": LOAN_STEP})

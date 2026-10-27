@@ -25,7 +25,7 @@ def forget_key(sender, request, user, **kwargs):
 
 @receiver(post_delete, sender=StoredObject)
 def remove_blob_files(sender, instance, **kwargs):
-    """Rows removed by a cascade (e.g. deleting a user) must not leave ciphertext files behind."""
+    # cascades (deleting a user) skip delete_object, so clean the files here
     for cipher in ("aes", "des", "rc4"):
         field = getattr(instance, f"{cipher}_file")
         if field:

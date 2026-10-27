@@ -31,11 +31,13 @@ class StoredObject(models.Model):
     ID_CARD = "ID_CARD"
     OFFICE = "OFFICE"
     VIDEO = "VIDEO"
+    LOAN = "LOAN"
     CATEGORIES = [
         (PROFILE, "Personal data"),
         (ID_CARD, "ID card image"),
         (OFFICE, "Office document"),
         (VIDEO, "Video"),
+        (LOAN, "Loan request"),
     ]
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)

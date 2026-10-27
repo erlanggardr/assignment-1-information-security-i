@@ -12,18 +12,19 @@ from . import crypto_engine as ce
 from . import keys, sealing
 from .models import StoredObject
 
-PROFILE, ID_CARD, OFFICE, VIDEO = (
+PROFILE, ID_CARD, OFFICE, VIDEO, LOAN = (
     StoredObject.PROFILE,
     StoredObject.ID_CARD,
     StoredObject.OFFICE,
     StoredObject.VIDEO,
+    StoredObject.LOAN,
 )
+KYC_CATEGORIES = (PROFILE, ID_CARD, OFFICE, VIDEO)
 
-# Ciphertext copies up to this size stay in the database row; larger ones go to disk.
 INLINE_LIMIT = 256 * 1024
 
 MB = 1024 * 1024
-# The whole upload is held in memory (3 ciphertext copies plus the plaintext), so limits stay modest.
+# uploads are read fully into memory (plaintext + 3 ciphertexts), so keep the limits low
 RULES = {
     ID_CARD: {"exts": {"jpg": "image/jpeg", "jpeg": "image/jpeg", "png": "image/png"}, "max": 10 * MB},
     OFFICE: {
@@ -39,6 +40,7 @@ RULES = {
     VIDEO: {"exts": {"mp4": "video/mp4", "webm": "video/webm", "mov": "video/quicktime"}, "max": 50 * MB},
 }
 PROFILE_MAX = 16 * 1024
+LOAN_MIN, LOAN_MAX = 500_000, 10_000_000
 
 _OLE = b"\xd0\xcf\x11\xe0\xa1\xb1\x1a\xe1"
 _MAGIC = {
@@ -61,6 +63,10 @@ class ObjectNotFound(Exception):
 
 
 class UploadRejected(Exception):
+    pass
+
+
+class LoanRejected(Exception):
     pass
 
 
@@ -93,7 +99,7 @@ def extension(name: str) -> str:
 
 
 def validate_file(category: str, filename: str, size: int, data: bytes = None) -> str:
-    """Check category, extension, size and (when data is given) magic bytes; return the server-chosen MIME type."""
+    """Return the MIME type for an allowed upload, or raise UploadRejected."""
     rule = RULES.get(category)
     if rule is None:
         raise UploadRejected("Unknown file category.")
@@ -174,7 +180,7 @@ def store_file(user, muk, category, filename, data: bytes) -> StoredObject:
 
 
 def store_profile(user, muk, fields: dict) -> StoredObject:
-    """Keep exactly one profile per user: the new one is written first, then older ones are removed."""
+    """One profile per user; saving again replaces it."""
     payload = sealing.dump_json(fields)
     if len(payload) > PROFILE_MAX:
         raise UploadRejected("Profile data is too large.")
@@ -251,11 +257,36 @@ def load_object(user, muk, object_id, cipher="aes") -> LoadedObject:
     )
 
 
-def load_profile(user, muk, cipher="aes"):
-    obj = StoredObject.objects.filter(owner=user, category=PROFILE).first()
+def _load_json(user, muk, category, cipher):
+    obj = StoredObject.objects.filter(owner=user, category=category).first()
     if obj is None:
         return None
     return json.loads(load_object(user, muk, obj.id, cipher).data.decode("utf-8"))
+
+
+def load_profile(user, muk, cipher="aes"):
+    return _load_json(user, muk, PROFILE, cipher)
+
+
+def kyc_missing(user):
+    have = set(StoredObject.objects.filter(owner=user, category__in=KYC_CATEGORIES).values_list("category", flat=True))
+    return [c for c in KYC_CATEGORIES if c not in have]
+
+
+def store_loan(user, muk, amount: int, purpose: str) -> StoredObject:
+    if not LOAN_MIN <= amount <= LOAN_MAX:
+        raise LoanRejected(f"Amount must be between {LOAN_MIN:,} and {LOAN_MAX:,}.")
+    with transaction.atomic():
+        if kyc_missing(user):
+            raise LoanRejected("Complete all KYC steps before requesting a loan.")
+        if StoredObject.objects.filter(owner=user, category=LOAN).exists():
+            raise LoanRejected("You already have a loan request.")
+        payload = sealing.dump_json({"amount": amount, "purpose": purpose})
+        return _seal_into(user, muk, LOAN, "loan.json", "application/json", payload)
+
+
+def load_loan(user, muk, cipher="aes"):
+    return _load_json(user, muk, LOAN, cipher)
 
 
 def delete_object(user, object_id) -> None:

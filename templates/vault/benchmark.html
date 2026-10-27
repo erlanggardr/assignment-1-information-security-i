@@ -5,6 +5,58 @@
 
 <form method="post" class="card card-body mb-4">
   {% csrf_token %}
+  <input type="hidden" name="kind" value="items">
+  <h5>Download your stored items</h5>
+  <p class="text-muted small">Downloads each item you have stored (ID card, documents, video, ...) several times per cipher, the same way the download button does: read the stored copy, unwrap the key, check the tag, decrypt, check the digest. Upload some items first.</p>
+  <label class="form-label">Downloads per item and cipher (median reported)</label>
+  <input type="number" name="downloads" value="10" min="1" max="30" class="form-control mb-3" style="width:120px">
+  <button class="btn btn-primary align-self-start">Run on my items</button>
+</form>
+
+{% if item_rows %}
+<div class="card card-body mb-4">
+  <h4>Your items</h4>
+  <p class="text-muted small">{{ env }} &middot; median of {{ item_downloads }} downloads after 1 warm-up</p>
+  <div class="table-responsive"><table class="table table-sm">
+    <thead><tr><th>Item</th><th>Size KB</th><th>Cipher</th><th>Read ms</th><th>Key ms</th><th>Decrypt ms</th><th>Verify ms</th><th>Total ms (&plusmn;sd)</th><th>MB/s</th></tr></thead>
+    <tbody>
+    {% for r in item_rows %}
+      <tr><td>{{ r.item }}</td><td>{{ r.kb|floatformat:1 }}</td><td>{{ r.cipher|upper }}</td><td>{{ r.io_ms|floatformat:3 }}</td><td>{{ r.key_ms|floatformat:3 }}</td>
+        <td>{{ r.decrypt_ms|floatformat:3 }}</td><td>{{ r.verify_ms|floatformat:3 }}</td>
+        <td>{{ r.total_ms|floatformat:3 }} &plusmn;{{ r.total_sd_ms|floatformat:3 }}</td><td>{{ r.mb_s|floatformat:1 }}</td></tr>
+    {% endfor %}
+    </tbody>
+  </table></div>
+</div>
+{% elif ran_items %}
+<div class="alert alert-info">You have nothing stored yet.</div>
+{% endif %}
+
+<form method="post" class="card card-body mb-4">
+  {% csrf_token %}
+  <input type="hidden" name="kind" value="analysis">
+  <h5>Compare the ciphertexts</h5>
+  <p class="text-muted small">Encrypts the same plaintext twice with the same key and compares the two outputs, and measures how random each ciphertext looks (entropy in bits per byte, 8 is the maximum).</p>
+  <button class="btn btn-primary align-self-start">Run comparison</button>
+</form>
+
+{% if analysis_rows %}
+<div class="card card-body mb-4">
+  <h4>Ciphertext comparison</h4>
+  <div class="table-responsive"><table class="table table-sm">
+    <thead><tr><th>Plaintext</th><th>Cipher</th><th>Plain entropy</th><th>Cipher entropy</th><th>Overhead B</th><th>Same output twice?</th><th>Equal bytes %</th></tr></thead>
+    <tbody>
+    {% for r in analysis_rows %}
+      <tr><td>{{ r.sample }}</td><td>{{ r.cipher|upper }}</td><td>{{ r.plain_entropy|floatformat:3 }}</td><td>{{ r.cipher_entropy|floatformat:4 }}</td>
+        <td>+{{ r.overhead }}</td><td>{{ r.same_output|yesno:"yes,no" }}</td><td>{{ r.equal_pct|floatformat:3 }}</td></tr>
+    {% endfor %}
+    </tbody>
+  </table></div>
+</div>
+{% endif %}
+
+<form method="post" class="card card-body mb-4">
+  {% csrf_token %}
   <input type="hidden" name="kind" value="download">
   <h5>Repeated downloads</h5>
   <p class="text-muted small">Seals one object, writes the three copies to disk, then downloads each copy many times (read file, unwrap key, verify tag, decrypt, check digest). Crypto time is reported separately from total time.</p>

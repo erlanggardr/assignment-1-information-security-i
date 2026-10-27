@@ -19,3 +19,6 @@ bench_results.csv
 .vscode/
 .idea/
 .DS_Store
+
+# Benchmark output
+bench_out/

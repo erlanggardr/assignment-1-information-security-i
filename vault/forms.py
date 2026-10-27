@@ -74,3 +74,18 @@ class UploadForm(forms.Form):
         except storage.UploadRejected as exc:
             raise forms.ValidationError(str(exc)) from exc
         return upload
+
+
+class LoanForm(forms.Form):
+    PURPOSES = [
+        ("daily", "Daily needs"),
+        ("education", "Education"),
+        ("business", "Small business"),
+        ("medical", "Medical"),
+        ("other", "Other"),
+    ]
+
+    amount = forms.IntegerField(
+        label="Amount (IDR)", min_value=storage.LOAN_MIN, max_value=storage.LOAN_MAX, widget=forms.NumberInput(attrs={"step": 100000})
+    )
+    purpose = forms.ChoiceField(label="Purpose", choices=PURPOSES)
