@@ -1,18 +1,36 @@
-import os
+import functools
 import time
 import uuid
 
+from django.contrib import messages
+from django.contrib.auth import logout
 from django.contrib.auth.decorators import login_required
+from django.contrib.auth.views import redirect_to_login
 from django.shortcuts import render
 
-from . import bench, keys, sealing
+from . import bench, keys, sealing, service
 from . import crypto_engine as ce
 
 MAX_UPLOAD_BYTES = 64 * 1024 * 1024
 
 
-@login_required
-def encrypt_demo(request):
+def vault_unlocked(view):
+    @login_required
+    @functools.wraps(view)
+    def wrapper(request, *args, **kwargs):
+        muk = service.get_muk(request)
+        if muk is None:
+            next_url = request.get_full_path()
+            logout(request)
+            messages.warning(request, "Your vault is locked. Sign in again to unlock it.")
+            return redirect_to_login(next_url)
+        return view(request, muk, *args, **kwargs)
+
+    return wrapper
+
+
+@vault_unlocked
+def encrypt_demo(request, muk):
     if request.method != "POST":
         return render(request, "vault/demo.html")
 
@@ -26,7 +44,6 @@ def encrypt_demo(request):
     if error:
         return render(request, "vault/demo.html", {"error": error}, status=400)
 
-    muk = os.urandom(keys.MUK_SIZE)  # replaced by the logged-in user's key in the next commit
     aad = keys.record_aad(request.user.pk, uuid.uuid4())
     sealed = sealing.seal(data, muk, aad)
     rows = []
@@ -51,15 +68,21 @@ def encrypt_demo(request):
     return render(request, "vault/demo.html", {"rows": rows, "plain_size": len(data), "digest": sealed.digest.hex()})
 
 
-@login_required
-def benchmark(request):
+@vault_unlocked
+def benchmark(request, muk):
+    context = {"sizes": list(bench.DEFAULT_SIZES), "default_sizes": ["1 KB", "1 MB"]}
     if request.method != "POST":
-        return render(request, "vault/benchmark.html")
-    try:
-        runs = max(1, min(int(request.POST.get("runs", 5)), 20))
-    except ValueError:
-        runs = 5
+        return render(request, "vault/benchmark.html", context)
+
     chosen = request.POST.getlist("sizes")
     sizes = {k: v for k, v in bench.DEFAULT_SIZES.items() if k in chosen} or {"1 MB": 1024**2}
-    rows = bench.run_benchmark(sizes, runs=runs)
-    return render(request, "vault/benchmark.html", {"rows": rows, "runs": runs, "env": bench.environment()})
+    runs = _bounded_int(request.POST.get("runs"), default=5, low=1, high=20)
+    context.update(rows=bench.run_benchmark(sizes, runs=runs), runs=runs, env=bench.environment())
+    return render(request, "vault/benchmark.html", context)
+
+
+def _bounded_int(raw, default, low, high):
+    try:
+        return max(low, min(int(raw), high))
+    except (TypeError, ValueError):
+        return default
