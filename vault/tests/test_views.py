@@ -54,3 +54,18 @@ class VaultViewTests(TestCase):
         self.assertEqual(resp.status_code, 200)
         for name in ("AES", "DES", "RC4"):
             self.assertIn(name, html)
+
+    def test_download_benchmark_reports_crypto_and_total_time(self):
+        resp = self.client.post(
+            reverse("vault_benchmark"), {"kind": "download", "sizes": ["1 KB"], "downloads": "3"}
+        )
+        html = resp.content.decode()
+        self.assertEqual(resp.status_code, 200)
+        self.assertIn("Download results", html)
+        for name in ("AES", "DES", "RC4"):
+            self.assertIn(name, html)
+        self.assertIn("Total ms", html)
+
+    def test_benchmark_ignores_garbage_counts(self):
+        resp = self.client.post(reverse("vault_benchmark"), {"kind": "download", "sizes": ["1 KB"], "downloads": "lots"})
+        self.assertEqual(resp.status_code, 200)

@@ -3,9 +3,11 @@ import os
 import platform
 import statistics
 import sys
+import tempfile
 import time
 
 from . import crypto_engine as ce
+from . import keys, sealing
 
 DEFAULT_SIZES = {"1 KB": 1024, "1 MB": 1024**2, "5 MB": 5 * 1024**2, "20 MB": 20 * 1024**2}
 
@@ -46,6 +48,66 @@ def run_benchmark(sizes=None, runs=10):
                     "expansion": len(blob) / n,
                 }
             )
+    return rows
+
+
+def run_download_benchmark(sizes=None, downloads=10):
+    sizes = sizes or {"1 MB": 1024**2}
+    muk = os.urandom(keys.MUK_SIZE)
+    aad = keys.record_aad(1, "benchmark", "payload")
+    rows = []
+    with tempfile.TemporaryDirectory() as tmp:
+        for label, n in sizes.items():
+            data = os.urandom(n)
+            sealed = sealing.seal(data, muk, aad)
+            paths = {}
+            for name in ce.CIPHERS:
+                paths[name] = os.path.join(tmp, f"{label.replace(' ', '')}.{name}")
+                with open(paths[name], "wb") as f:
+                    f.write(sealed.blobs[name])
+
+            def download(name):
+                t0 = time.perf_counter_ns()
+                with open(paths[name], "rb") as f:
+                    blob = f.read()
+                t1 = time.perf_counter_ns()
+                res = sealing.open_one(name, blob, sealed.wrapped_dek, sealed.digest, muk, aad)
+                t2 = time.perf_counter_ns()
+                if res.plaintext != data:
+                    raise AssertionError(f"{name} download returned different bytes")
+                return t1 - t0, res, t2 - t0
+
+            for name in ce.CIPHERS:
+                download(name)
+                io, key, dec, ver, total = [], [], [], [], []
+                for _ in range(downloads):
+                    io_ns, res, total_ns = download(name)
+                    io.append(io_ns)
+                    key.append(res.unwrap_ns)
+                    dec.append(res.decrypt_ns)
+                    ver.append(res.verify_ns)
+                    total.append(total_ns)
+                crypto = [k + d + v for k, d, v in zip(key, dec, ver)]
+                mb = n / 1024**2
+                med = statistics.median
+                rows.append(
+                    {
+                        "size": label,
+                        "bytes": n,
+                        "cipher": name,
+                        "downloads": downloads,
+                        "io_ms": med(io) / 1e6,
+                        "key_ms": med(key) / 1e6,
+                        "decrypt_ms": med(dec) / 1e6,
+                        "verify_ms": med(ver) / 1e6,
+                        "crypto_ms": med(crypto) / 1e6,
+                        "crypto_sd_ms": (statistics.stdev(crypto) if downloads > 1 else 0.0) / 1e6,
+                        "total_ms": med(total) / 1e6,
+                        "total_sd_ms": (statistics.stdev(total) if downloads > 1 else 0.0) / 1e6,
+                        "crypto_mb_s": mb / (med(crypto) / 1e9),
+                        "total_mb_s": mb / (med(total) / 1e9),
+                    }
+                )
     return rows
 
 

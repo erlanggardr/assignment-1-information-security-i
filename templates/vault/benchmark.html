@@ -2,25 +2,63 @@
 {% block title %}Cipher benchmark{% endblock title %}
 {% block content %}
 <h2 class="mt-4">Cipher benchmark</h2>
+
 <form method="post" class="card card-body mb-4">
   {% csrf_token %}
+  <input type="hidden" name="kind" value="download">
+  <h5>Repeated downloads</h5>
+  <p class="text-muted small">Seals one object, writes the three copies to disk, then downloads each copy many times (read file, unwrap key, verify tag, decrypt, check digest). Crypto time is reported separately from total time.</p>
   <div class="mb-3">
     <span class="form-label d-block">Payload sizes</span>
-    <div class="form-check form-check-inline"><input class="form-check-input" type="checkbox" name="sizes" value="1 KB" id="s1" checked><label class="form-check-label" for="s1">1 KB</label></div>
-    <div class="form-check form-check-inline"><input class="form-check-input" type="checkbox" name="sizes" value="1 MB" id="s2" checked><label class="form-check-label" for="s2">1 MB</label></div>
-    <div class="form-check form-check-inline"><input class="form-check-input" type="checkbox" name="sizes" value="5 MB" id="s3"><label class="form-check-label" for="s3">5 MB</label></div>
-    <div class="form-check form-check-inline"><input class="form-check-input" type="checkbox" name="sizes" value="20 MB" id="s4"><label class="form-check-label" for="s4">20 MB</label></div>
+    {% for s in sizes %}
+    <div class="form-check form-check-inline"><input class="form-check-input" type="checkbox" name="sizes" value="{{ s }}" id="d{{ forloop.counter }}" {% if s in default_sizes %}checked{% endif %}><label class="form-check-label" for="d{{ forloop.counter }}">{{ s }}</label></div>
+    {% endfor %}
+  </div>
+  <label class="form-label">Downloads per cipher and size (median reported)</label>
+  <input type="number" name="downloads" value="10" min="1" max="30" class="form-control mb-3" style="width:120px">
+  <button class="btn btn-primary align-self-start">Run download benchmark</button>
+</form>
+
+{% if download_rows %}
+<div class="card card-body mb-4">
+  <h4>Download results</h4>
+  <p class="text-muted small">{{ env }} &middot; median of {{ downloads }} downloads after 1 warm-up. Files come from the OS page cache, so I/O is a lower bound.</p>
+  <div class="table-responsive"><table class="table table-sm">
+    <thead><tr><th>Size</th><th>Cipher</th><th>File read ms</th><th>Key ms</th><th>Decrypt ms</th><th>Verify ms</th><th>Crypto ms (±sd)</th><th>Total ms (±sd)</th><th>Crypto MB/s</th><th>Total MB/s</th></tr></thead>
+    <tbody>
+    {% for r in download_rows %}
+      <tr><td>{{ r.size }}</td><td>{{ r.cipher|upper }}</td><td>{{ r.io_ms|floatformat:3 }}</td><td>{{ r.key_ms|floatformat:3 }}</td>
+        <td>{{ r.decrypt_ms|floatformat:3 }}</td><td>{{ r.verify_ms|floatformat:3 }}</td>
+        <td>{{ r.crypto_ms|floatformat:3 }} &plusmn;{{ r.crypto_sd_ms|floatformat:3 }}</td>
+        <td>{{ r.total_ms|floatformat:3 }} &plusmn;{{ r.total_sd_ms|floatformat:3 }}</td>
+        <td>{{ r.crypto_mb_s|floatformat:1 }}</td><td>{{ r.total_mb_s|floatformat:1 }}</td></tr>
+    {% endfor %}
+    </tbody>
+  </table></div>
+</div>
+{% endif %}
+
+<form method="post" class="card card-body mb-4">
+  {% csrf_token %}
+  <input type="hidden" name="kind" value="cipher">
+  <h5>Cipher core: encrypt and decrypt in memory</h5>
+  <div class="mb-3">
+    <span class="form-label d-block">Payload sizes</span>
+    {% for s in sizes %}
+    <div class="form-check form-check-inline"><input class="form-check-input" type="checkbox" name="sizes" value="{{ s }}" id="c{{ forloop.counter }}" {% if s in default_sizes %}checked{% endif %}><label class="form-check-label" for="c{{ forloop.counter }}">{{ s }}</label></div>
+    {% endfor %}
   </div>
   <label class="form-label">Timed runs per cell (median reported)</label>
   <input type="number" name="runs" value="5" min="1" max="20" class="form-control mb-3" style="width:120px">
-  <button class="btn btn-primary align-self-start">Run benchmark</button>
-  <p class="text-muted small mt-2 mb-0">20 MB with DES takes a while. Keys are derived once and not timed.</p>
+  <button class="btn btn-primary align-self-start">Run cipher benchmark</button>
+  <p class="text-muted small mt-2 mb-0">20 MB with DES takes a while. Key setup is not timed.</p>
 </form>
+
 {% if rows %}
 <div class="card card-body mb-4">
-  <h4>Results</h4>
+  <h4>Cipher core results</h4>
   <p class="text-muted small">{{ env }} &middot; median of {{ runs }} runs after 1 warm-up</p>
-  <table class="table table-sm">
+  <div class="table-responsive"><table class="table table-sm">
     <thead><tr><th>Size</th><th>Cipher</th><th>Enc ms</th><th>Dec ms</th><th>Enc MB/s</th><th>Dec MB/s</th><th>Ciphertext B</th><th>Expansion</th></tr></thead>
     <tbody>
     {% for r in rows %}
@@ -28,7 +66,7 @@
         <td>{{ r.enc_mb_s|floatformat:1 }}</td><td>{{ r.dec_mb_s|floatformat:1 }}</td><td>{{ r.cipher_bytes }}</td><td>{{ r.expansion|floatformat:4 }}x</td></tr>
     {% endfor %}
     </tbody>
-  </table>
+  </table></div>
 </div>
 {% endif %}
 {% endblock content %}

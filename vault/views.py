@@ -76,8 +76,13 @@ def benchmark(request, muk):
 
     chosen = request.POST.getlist("sizes")
     sizes = {k: v for k, v in bench.DEFAULT_SIZES.items() if k in chosen} or {"1 MB": 1024**2}
-    runs = _bounded_int(request.POST.get("runs"), default=5, low=1, high=20)
-    context.update(rows=bench.run_benchmark(sizes, runs=runs), runs=runs, env=bench.environment())
+    context["env"] = bench.environment()
+    if request.POST.get("kind") == "download":
+        downloads = _bounded_int(request.POST.get("downloads"), default=10, low=1, high=30)
+        context.update(download_rows=bench.run_download_benchmark(sizes, downloads), downloads=downloads)
+    else:
+        runs = _bounded_int(request.POST.get("runs"), default=5, low=1, high=20)
+        context.update(rows=bench.run_benchmark(sizes, runs=runs), runs=runs)
     return render(request, "vault/benchmark.html", context)
 
 
