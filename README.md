@@ -85,3 +85,9 @@ python manage.py benchmark_vault   # results go to bench_out/
 ```
 
 The tests run without torch (the liveness engine is stubbed). Benchmark numbers depend on the machine, so run it on your own.
+
+
+## Other links or AI Chat we use:
+https://claude.ai/share/9ef6f9cb-3048-467f-a655-f82bba41020f
+https://claude.ai/share/a8ecbb9a-b0ef-46e1-b1b8-36ad6642676b
+https://github.com/manhcuong02/eKYC
