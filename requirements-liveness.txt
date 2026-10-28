@@ -1,0 +1,6 @@
+# Only needed when LIVENESS_ENGINE=ekyc. CPU build of torch:
+#   pip install --index-url https://download.pytorch.org/whl/cpu torch==2.5.1 torchvision==0.20.1
+opencv-python-headless
+imutils
+dlib-bin
+numpy

@@ -27,7 +27,7 @@
           {% if step.done %}<span class="badge text-bg-success ms-1">Done</span>{% else %}<span class="badge text-bg-secondary ms-1">To do</span>{% endif %}
         </h5>
         <p class="mb-1">{{ step.why }}</p>
-        <p class="small text-muted mb-0">{{ step.kind }} &middot; {{ step.law }}</p>
+        <p class="small text-muted mb-0">{{ step.kind }}</p>
       </div>
       <div>
         {% if step.url %}
@@ -81,7 +81,7 @@
         {% else %}
         <p class="mb-1">{{ loan_why }}</p>
         {% endif %}
-        <p class="small text-muted mb-0">Personal financial data &middot; UU PDP Art. 4(2)(f)</p>
+        <p class="small text-muted mb-0">Personal financial data</p>
       </div>
       <div>
         {% if complete and not loan %}<a class="btn btn-primary" href="{% url 'vault_loan' %}">Request a loan</a>{% endif %}

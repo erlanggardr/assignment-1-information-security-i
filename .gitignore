@@ -22,3 +22,9 @@ bench_results.csv
 
 # Benchmark output
 bench_out/
+
+# eKYC models (not redistributed, see README)
+vendor/
+
+# local https certificate for phone testing
+certs/

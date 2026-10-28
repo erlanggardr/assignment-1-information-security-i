@@ -1,0 +1,19 @@
+{% extends "_base.html" %}
+{% load static %}
+{% block title %}{{ title }}{% endblock title %}
+{% block content %}
+<h2 class="mt-4">{{ title }}</h2>
+{% include "vault/_step_note.html" %}
+<div class="card card-body mb-4" id="liveness"
+     data-challenge-url="{% url 'vault_liveness_challenge' %}"
+     data-submit-url="{% url 'vault_liveness_submit' %}">
+  {% csrf_token %}
+  <p class="mb-2">The camera opens as soon as this page loads. Allow it, then follow the instruction shown. The recording is about 7 seconds. It is checked once on the server and stored encrypted only if the check passes.</p>
+  <video id="camera" class="w-100 rounded bg-dark mb-2" style="max-width: 480px; transform: scaleX(-1);" playsinline muted></video>
+  <p class="fs-5 mb-1" id="instruction" aria-live="polite"></p>
+  <p class="text-muted mb-2" id="status" aria-live="polite"></p>
+  <button class="btn btn-primary align-self-start" id="start-btn" hidden>Try again</button>
+</div>
+<a href="{% url 'vault_dashboard' %}">Back to my application</a>
+<script src="{% static 'js/liveness.js' %}"></script>
+{% endblock content %}

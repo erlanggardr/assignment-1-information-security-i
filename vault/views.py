@@ -1,4 +1,5 @@
 import functools
+import logging
 import time
 import uuid
 
@@ -6,14 +7,19 @@ from django.contrib import messages
 from django.contrib.auth import logout
 from django.contrib.auth.decorators import login_required
 from django.contrib.auth.views import redirect_to_login
-from django.http import Http404, HttpResponse, HttpResponseBadRequest
+from django.core.cache import cache
+from django.http import Http404, HttpResponse, HttpResponseBadRequest, JsonResponse
 from django.shortcuts import redirect, render
+from django.urls import reverse
 from django.utils.http import content_disposition_header
 from django.views.decorators.http import require_POST
 
 from . import bench, bench_vault, keys, sealing, service, storage
 from . import crypto_engine as ce
+from . import liveness as live
 from .forms import LoanForm, ProfileForm, UploadForm
+
+log = logging.getLogger(__name__)
 
 MAX_UPLOAD_BYTES = 64 * 1024 * 1024
 
@@ -112,7 +118,6 @@ STEPS = [
         "title": "Personal details",
         "why": "We use these details to check who you are and to match you against your ID card.",
         "kind": "General and financial personal data",
-        "law": "UU PDP Art. 4(3), 4(2)(f) · GDPR Art. 4(1)",
         "url": "vault_profile",
         "action": "Fill in",
     },
@@ -121,7 +126,6 @@ STEPS = [
         "title": "ID card (e-KTP)",
         "why": "A photo of your e-KTP proves who you are. It carries your face photo, signature and religion.",
         "kind": "Biometric data (face, signature)",
-        "law": "UU PDP Art. 4(2)(b) · GDPR Art. 9",
         "slug": "id-card",
         "action": "Upload",
     },
@@ -130,16 +134,14 @@ STEPS = [
         "title": "Proof of income",
         "why": "A payslip, employer letter or tax return (PDF, DOC, XLS) shows that you can repay a loan.",
         "kind": "Personal financial data",
-        "law": "UU PDP Art. 4(2)(f)",
         "slug": "office",
         "action": "Upload",
     },
     {
         "category": storage.VIDEO,
         "title": "Liveness video",
-        "why": "A short selfie video (record it on your phone, then upload the file) confirms a real person is applying and matches the face on your ID.",
+        "why": "A short selfie video confirms a real person is applying and matches the face on your ID.",
         "kind": "Biometric data (face, voice)",
-        "law": "UU PDP Art. 4(2)(b) · GDPR Art. 9",
         "slug": "video",
         "action": "Upload",
     },
@@ -150,7 +152,6 @@ PROFILE_STEP = STEPS[0]
 
 LOAN_STEP = {
     "kind": "Personal financial data",
-    "law": "UU PDP Art. 4(2)(f)",
     "why": "Tell us how much you want to borrow. You can only apply once every KYC step is done.",
 }
 
@@ -167,6 +168,8 @@ def dashboard(request, muk):
     steps = []
     for number, step in enumerate(STEPS, start=1):
         items = [e for e in entries if e["category"] == step["category"]]
+        if step["category"] == storage.VIDEO and live.enabled():
+            step = {**step, "action": "Open camera"}
         steps.append({**step, "number": number, "items": items, "done": bool(items)})
     done = sum(1 for step in steps if step["done"])
     complete = done == len(steps)
@@ -207,6 +210,8 @@ def upload(request, muk, slug):
     if slug not in UPLOAD_SLUGS:
         raise Http404
     category, title = UPLOAD_SLUGS[slug]
+    if category == storage.VIDEO and live.enabled():
+        return redirect("vault_liveness")
     if request.method == "POST":
         form = UploadForm(request.POST, request.FILES, category=category)
         if form.is_valid():
@@ -223,6 +228,77 @@ def upload(request, muk, slug):
     return render(
         request, "vault/upload.html", {"form": UploadForm(category=category), "title": title, "step": STEP_BY_SLUG[slug]}
     )
+
+
+LIVENESS_CHALLENGE_TTL = 120
+LIVENESS_ATTEMPTS = 10  # per hour
+
+
+def _json_error(message, status):
+    return JsonResponse({"error": message}, status=status)
+
+
+@vault_unlocked
+def liveness(request, muk):
+    if not live.enabled():
+        return redirect("vault_upload", slug="video")
+    return render(request, "vault/liveness.html", {"step": STEP_BY_SLUG["video"], "title": "Record liveness video"})
+
+
+@require_POST
+@vault_unlocked
+def liveness_challenge(request, muk):
+    if not live.enabled():
+        raise Http404
+    try:
+        challenge, question = live.get_engine().new_challenge()
+    except Exception:
+        log.exception("liveness engine unavailable")
+        return _json_error("The check is unavailable right now. Please try again later.", 503)
+    request.session["liveness"] = {"challenge": challenge, "question": question, "issued": time.time()}
+    text = question[0] if isinstance(question, (list, tuple)) else question
+    return JsonResponse({"instruction": text})
+
+
+@require_POST
+@vault_unlocked
+def liveness_submit(request, muk):
+    """Check the challenge on the uploaded video; store it encrypted only if it passes."""
+    if not live.enabled():
+        raise Http404
+    state = request.session.pop("liveness", None)  # single use
+    if not state or time.time() - state["issued"] > LIVENESS_CHALLENGE_TTL:
+        return _json_error("That challenge expired. Please start again.", 400)
+    key = f"liveness:{request.user.pk}"
+    tries = cache.get(key, 0)
+    if tries >= LIVENESS_ATTEMPTS:
+        return _json_error("Too many attempts. Please try again in an hour.", 429)
+    cache.set(key, tries + 1, 3600)
+
+    upload_file = request.FILES.get("video")
+    if upload_file is None:
+        return _json_error("The video upload was incomplete. Please try again.", 400)
+    data = b"".join(upload_file.chunks())
+    filename = storage.clean_filename(upload_file.name)
+    try:
+        storage.validate_file(storage.VIDEO, filename, len(data), data)
+    except storage.UploadRejected as exc:
+        return _json_error(str(exc), 400)
+
+    try:
+        frames = live.extract_frames(data)
+        result = live.get_engine().check(frames, state["challenge"], state["question"])
+    except live.VideoUnreadable as exc:
+        return _json_error(str(exc), 400)
+    except Exception:
+        log.exception("liveness check failed")
+        return _json_error("The check is unavailable right now. Please try again later.", 503)
+    if not result.passed:
+        return JsonResponse({"passed": False, "message": "We could not confirm the instruction. Face the camera in good light and try again."})
+
+    storage.store_file(request.user, muk, storage.VIDEO, filename, data)
+    messages.success(request, f"{STEP_BY_SLUG['video']['title']} stored, encrypted with AES, DES and RC4.")
+    return JsonResponse({"passed": True, "redirect": reverse("vault_dashboard")})
 
 
 @vault_unlocked

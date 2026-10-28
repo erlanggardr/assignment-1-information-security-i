@@ -24,7 +24,9 @@ if not SECRET_KEY:
     SECRET_KEY = "dev-only-insecure-key-do-not-use-in-production"
 
 # https://docs.djangoproject.com/en/dev/ref/settings/#allowed-hosts
-ALLOWED_HOSTS = ["localhost", "0.0.0.0", "127.0.0.1"]
+ALLOWED_HOSTS = ["localhost", "0.0.0.0", "127.0.0.1"] + [
+    h for h in os.environ.get("DJANGO_ALLOWED_HOSTS", "").split(",") if h
+]
 
 
 # Application definition
@@ -157,6 +159,13 @@ STATICFILES_DIRS = [BASE_DIR / "static"]
 # Encrypted vault blobs (never served directly; downloads go through an authenticated view).
 MEDIA_ROOT = BASE_DIR / "vault_data"
 
+# "ekyc" checks the selfie video with the models from github.com/manhcuong02/eKYC; "off" accepts any video.
+# Unset, it turns on when the eKYC repo is found at EKYC_PATH.
+EKYC_PATH = os.environ.get("EKYC_PATH", str(BASE_DIR / "vendor" / "ekyc"))
+LIVENESS_ENGINE = os.environ.get("LIVENESS_ENGINE") or (
+    "ekyc" if (Path(EKYC_PATH) / "liveness_detection").is_dir() else "off"
+)
+
 # https://whitenoise.readthedocs.io/en/latest/django.html
 STORAGES = {
     "default": {
@@ -225,4 +234,4 @@ VAULT_KEY_TTL_SECONDS = 3600
 CSRF_TRUSTED_ORIGINS = [
     "http://localhost:8000",  # Default Django dev server
     "http://127.0.0.1:8000",  # Alternative local address
-]
+] + [o for o in os.environ.get("DJANGO_CSRF_TRUSTED_ORIGINS", "").split(",") if o]

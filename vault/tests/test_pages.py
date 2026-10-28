@@ -1,13 +1,17 @@
+import importlib.util
 import io
 import os
 import re
 import shutil
 import tempfile
+import unittest
+from unittest import mock
 
 from django.test import TestCase, override_settings
 from django.urls import reverse
 
-from vault import storage
+from vault import liveness as live
+from vault import storage, views
 from vault.keyring import keyring
 from vault.models import StoredObject
 from vault.tests.support import login, new_client, no_manifest, signup
@@ -32,6 +36,7 @@ def upload_file(name, data):
     return f
 
 
+@override_settings(LIVENESS_ENGINE="off")
 @no_manifest
 class PageBase(TestCase):
     def setUp(self):
@@ -268,12 +273,20 @@ class OnboardingTests(PageBase):
         self.client.post(reverse("vault_delete", args=[self.first_id(storage.ID_CARD)]))
         self.assertEqual(self.client.get(reverse("vault_dashboard")).context["done"], 0)
 
-    def test_step_pages_explain_why_and_the_legal_class(self):
+    def test_step_pages_explain_why_and_the_type_of_data(self):
         for slug, text in (("id-card", "Biometric"), ("office", "financial"), ("video", "Biometric")):
             html = self.client.get(reverse("vault_upload", args=[slug])).content.decode()
             self.assertIn("Why we ask", html)
+            self.assertIn("Type of data", html)
             self.assertIn(text, html)
-        self.assertIn("UU PDP", self.client.get(reverse("vault_profile")).content.decode())
+        self.assertIn("Why we ask", self.client.get(reverse("vault_profile")).content.decode())
+
+    def test_pages_do_not_cite_regulations(self):
+        urls = [reverse("home"), reverse("vault_dashboard"), reverse("vault_profile"), reverse("vault_upload", args=["video"])]
+        for url in urls:
+            html = self.client.get(url).content.decode()
+            for name in ("UU PDP", "GDPR"):
+                self.assertNotIn(name, html, url)
 
 
 class LoanTests(PageBase):
@@ -365,3 +378,107 @@ class LoanTests(PageBase):
 
     def test_login_required(self):
         self.assertEqual(new_client().get(reverse("vault_loan")).status_code, 302)
+
+
+class StubEngine:
+    def __init__(self, passed):
+        self.passed = passed
+
+    def new_challenge(self):
+        return "smile", "Please put on a smile expression"
+
+    def check(self, frames, challenge, question):
+        return live.Result(self.passed, len(frames), len(frames), "stub")
+
+
+@override_settings(LIVENESS_ENGINE="ekyc")
+class LivenessTests(PageBase):
+    video = b"\x00\x00\x00\x18ftypmp42" + os.urandom(2000)
+
+    def run_check(self, passed=True, data=None, name="liveness.mp4"):
+        engine = StubEngine(passed)
+        patches = [
+            mock.patch.object(live, "get_engine", return_value=engine),
+            mock.patch.object(live, "extract_frames", return_value=[object()] * 5),
+        ]
+        for p in patches:
+            p.start()
+            self.addCleanup(p.stop)
+        self.client.post(reverse("vault_liveness_challenge"))
+        return self.client.post(reverse("vault_liveness_submit"), {"video": upload_file(name, data or self.video)})
+
+    def test_passing_check_stores_the_video_encrypted(self):
+        resp = self.run_check(True)
+        self.assertTrue(resp.json()["passed"])
+        oid = self.first_id(storage.VIDEO)
+        got = self.client.get(reverse("vault_download", args=[oid]), {"cipher": "des"})
+        self.assertEqual(got.content, self.video)
+
+    def test_failing_check_stores_nothing(self):
+        resp = self.run_check(False)
+        self.assertFalse(resp.json()["passed"])
+        self.assertFalse(StoredObject.objects.filter(category=storage.VIDEO).exists())
+
+    def test_challenge_is_single_use(self):
+        self.run_check(False)
+        resp = self.client.post(reverse("vault_liveness_submit"), {"video": upload_file("l.mp4", self.video)})
+        self.assertEqual(resp.status_code, 400)
+        self.assertFalse(StoredObject.objects.filter(category=storage.VIDEO).exists())
+
+    def test_submit_without_challenge_is_rejected(self):
+        resp = self.client.post(reverse("vault_liveness_submit"), {"video": upload_file("l.mp4", self.video)})
+        self.assertEqual(resp.status_code, 400)
+
+    def test_wrong_file_type_is_rejected_before_the_check(self):
+        resp = self.run_check(True, data=b"%PDF-1.7\n" + os.urandom(200), name="liveness.mp4")
+        self.assertEqual(resp.status_code, 400)
+        self.assertFalse(StoredObject.objects.filter(category=storage.VIDEO).exists())
+
+    def test_plain_upload_is_redirected_to_the_check(self):
+        resp = self.client.get(reverse("vault_upload", args=["video"]))
+        self.assertRedirects(resp, reverse("vault_liveness"), fetch_redirect_response=False)
+        resp = self.put("video", "live.mp4", self.video)
+        self.assertRedirects(resp, reverse("vault_liveness"), fetch_redirect_response=False)
+        self.assertFalse(StoredObject.objects.filter(category=storage.VIDEO).exists())
+
+    def test_attempts_are_limited(self):
+        for _ in range(views.LIVENESS_ATTEMPTS):
+            self.run_check(False)
+        self.assertEqual(self.run_check(True).status_code, 429)
+
+    def test_page_needs_login(self):
+        resp = new_client().get(reverse("vault_liveness"))
+        self.assertEqual(resp.status_code, 302)
+        self.assertIn("login", resp["Location"])
+
+    def test_liveness_page_renders(self):
+        self.assertContains(self.client.get(reverse("vault_liveness")), "liveness.js")
+
+
+class LivenessOffTests(PageBase):
+    def test_default_is_plain_upload(self):
+        resp = self.client.get(reverse("vault_liveness"))
+        self.assertRedirects(resp, reverse("vault_upload", args=["video"]), fetch_redirect_response=False)
+        self.assertEqual(self.client.post(reverse("vault_liveness_challenge")).status_code, 404)
+
+
+@unittest.skipUnless(importlib.util.find_spec("cv2"), "opencv not installed")
+class FrameExtractionTests(TestCase):
+    def test_frames_are_sampled_and_rgb(self):
+        import cv2
+        import numpy as np
+
+        with tempfile.TemporaryDirectory() as d:
+            path = os.path.join(d, "t.avi")
+            w = cv2.VideoWriter(path, cv2.VideoWriter_fourcc(*"MJPG"), 15, (320, 240))
+            for _ in range(20):
+                w.write(np.zeros((240, 320, 3), np.uint8) + np.array([255, 0, 0], np.uint8))  # BGR blue
+            w.release()
+            data = open(path, "rb").read()
+        frames = live.extract_frames(data)
+        self.assertEqual(len(frames), 10)
+        self.assertGreater(frames[0][0, 0, 2], 200)  # blue ends up in the last RGB channel
+
+    def test_garbage_is_unreadable(self):
+        with self.assertRaises(live.VideoUnreadable):
+            live.extract_frames(os.urandom(500))
